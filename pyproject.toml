@@ -15,9 +15,9 @@ scipy = "^1.11.2"
 lange = "^1.230203.1"
 #pathos = "^0.3.0"
 pyqt6 = "^6.6.0"
-torch = {version = "^2.7.1+cpu", source = "torchcpu1130"}
-torchvision = {version = "^0.22.1+cpu", source = "torchcpu1130"}
-torchtext = {version = "^0.18.0+cpu", source = "torchcpu1130"}
+torch = "^2.3"  # ou "^2.4" se preferir
+#torchtext = {version = "^0.18.0+cpu", source = "torchcpu1130"}
+torchtext = "^0.18"
 hdict = { git = "https://github.com/davips/hdict.git", tag = "v2.250313.2" }
 scikit-learn = "^1.2.2"
 numpy = "^1.24.2"  #=1.24.2
