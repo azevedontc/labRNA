@@ -83,6 +83,15 @@ plt.colorbar(label='Digit Class')
 plt.title('Autoencoder 2D Embedding of MNIST Sample')
 plt.show()
 
+tsne = TSNE()
+embeddings = tsne.fit_transform(X_scaled)
+# Plot the results
+plt.figure(figsize=(10, 8))
+plt.scatter(embeddings[:, 0], embeddings[:, 1], c=y, cmap='tab10', alpha=0.6)
+plt.colorbar(label='Digit Class')
+plt.title('TSNE 2D Embedding of MNIST Sample')
+plt.show()
+
 # Plot the results
 pca = PCA()
 embeddings = pca.fit_transform(X_scaled)
@@ -91,13 +100,4 @@ plt.figure(figsize=(10, 8))
 plt.scatter(embeddings[:, 0], embeddings[:, 1], c=y, cmap='tab10', alpha=0.6)
 plt.colorbar(label='Digit Class')
 plt.title('PCA 2D Embedding of MNIST Sample')
-plt.show()
-
-tsne = TSNE()
-embeddings = tsne.fit_transform(X_scaled)
-# Plot the results
-plt.figure(figsize=(10, 8))
-plt.scatter(embeddings[:, 0], embeddings[:, 1], c=y, cmap='tab10', alpha=0.6)
-plt.colorbar(label='Digit Class')
-plt.title('TSNE 2D Embedding of MNIST Sample')
 plt.show()
