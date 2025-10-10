@@ -1,17 +1,15 @@
-import torch.nn as nn
-import matplotlib.pyplot as plt
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import matplotlib.pyplot as plt
+import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
-
 from lab.dataset import mnist
 
-
+# ====== Função utilitária ======
 def plot_decision_boundary(X, y, model, title):
     x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
     y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1
@@ -20,63 +18,77 @@ def plot_decision_boundary(X, y, model, title):
     grid = np.c_[xx.ravel(), yy.ravel()]
     grid_tensor = torch.FloatTensor(grid)
     with torch.no_grad():
-        logits = model(grid_tensor)
-        Z = (logits > 0.5).int().numpy().reshape(xx.shape)
-    plt.contourf(xx, yy, Z, alpha=0.3, cmap="coolwarm")
+        Z = model(grid_tensor).numpy().reshape(xx.shape)
+    plt.contourf(xx, yy, Z, levels=[0, 0.5, 1], alpha=0.3, cmap="coolwarm")
     plt.scatter(X[:, 0], X[:, 1], c=y, edgecolors="k", cmap="coolwarm")
     plt.title(title)
     plt.show()
 
-
-# Load MNIST and reduce to 2D with PCA
+# ====== Dados ======
+torch.manual_seed(0)
 X, y = mnist(1800)
-# Binary classification: 0 vs not 0
-b = y == 0
-X0 = X[b, :]
-y0 = y[b]
+b = np.logical_or(y == 0, y == 1)
+X, y = X[b], y[b]
+y = (y == 1).astype(float)
 
-b = y == 1
-X1 = X[b, :]
-y1 = y[b]
-
-X = np.vstack((X0, X1))
-y = np.vstack((y0.reshape(-1, 1), y1.reshape(-1, 1)))
+# PCA → 2D
 pca = PCA(n_components=2)
 X_pca = pca.fit_transform(X)
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X_pca)
+X_scaled = StandardScaler().fit_transform(X_pca)
 
-X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=0)
+X_train, X_test, y_train, y_test = train_test_split(
+    X_scaled, y, test_size=0.2, random_state=0
+)
 X_train, y_train = torch.FloatTensor(X_train), torch.FloatTensor(y_train).view(-1, 1)
 X_test, y_test = torch.FloatTensor(X_test), torch.FloatTensor(y_test).view(-1, 1)
+train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=32, shuffle=True)
 
-train_ds = TensorDataset(X_train, y_train)
-train_loader = DataLoader(train_ds, batch_size=32, shuffle=True)
-
-
+# ====== Modelo ======
 class Classifier(nn.Module):
     def __init__(self):
-        super(Classifier, self).__init__()
+        super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(2, 100), nn.Tanh(),
-            nn.Linear(100, 1), nn.Sigmoid()
+            nn.Linear(2, 100),
+            nn.Tanh(),
+            nn.Linear(100, 1),
+            nn.Sigmoid()
         )
 
     def forward(self, x):
         return self.net(x)
 
+# ====== Treino com função de perda genérica ======
+def train_model(loss_fn_name):
+    model = Classifier()
+    torch.manual_seed(0)  # mesma semente p/ pesos iguais
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
 
-model = Classifier()
-criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.1)
+    if loss_fn_name == "MSE":
+        criterion = nn.MSELoss()
+    elif loss_fn_name == "BCE":
+        criterion = nn.BCELoss()  # entropia cruzada binária
 
-num_epochs = 100
-for epoch in range(num_epochs):
-    for i, (data, target) in enumerate(train_loader):
-        outputs = model(data)
-        loss = criterion(outputs, target)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+    for epoch in range(100):
+        for data, target in train_loader:
+            outputs = model(data)
+            loss = criterion(outputs, target)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-plot_decision_boundary(X_train.numpy(), y_train.numpy().flatten(), model, "Tanh")
+    # Avaliação
+    with torch.no_grad():
+        preds = (model(X_test) > 0.5).float()
+        acc = (preds == y_test).float().mean().item()
+    return model, acc
+
+# ====== Rodar os dois ======
+model_mse, acc_mse = train_model("MSE")
+model_bce, acc_bce = train_model("BCE")
+
+print(f"Acurácia (MSE): {acc_mse:.3f}")
+print(f"Acurácia (Entropia cruzada): {acc_bce:.3f}")
+
+# ====== Plot ======
+plot_decision_boundary(X_train.numpy(), y_train.numpy().flatten(), model_mse, "Fronteira - MSELoss")
+plot_decision_boundary(X_train.numpy(), y_train.numpy().flatten(), model_bce, "Fronteira - Entropia Cruzada (BCE)")
