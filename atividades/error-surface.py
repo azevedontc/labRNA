@@ -26,9 +26,9 @@ class Classifier(nn.Module):
         super(Classifier, self).__init__()
         self.net = nn.Sequential(
             nn.Linear(64, 10),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(10, 10),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(10, 10)
         )
 
