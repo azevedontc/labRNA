@@ -1,102 +1,90 @@
-import matplotlib.pyplot as plt
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
-from sklearn.preprocessing import StandardScaler
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.manifold import TSNE
 from torch.utils.data import DataLoader, TensorDataset
 
 from lab.dataset import mnist
 
-# Load MNIST data
-X, y = mnist(1000)
+# ---------- Reprodutibilidade ----------
+torch.manual_seed(0)
+np.random.seed(0)
 
-# Standardize the data
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
+# ---------- Dados ----------
+X, y = mnist(1000)                 # 1000 amostras (64 features)
+X = StandardScaler().fit_transform(X)  # padroniza (ajuda o treino)
 
-# Convert to PyTorch tensors
-X_tensor = torch.FloatTensor(X_scaled)
-dataset = TensorDataset(X_tensor, X_tensor)  # Autoencoder uses input as target
-dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+X_tensor = torch.FloatTensor(X)
+dataset  = TensorDataset(X_tensor, X_tensor)  # AE usa entrada como alvo
+loader   = DataLoader(dataset, batch_size=64, shuffle=True)
 
-
-# Define a simple autoencoder
+# ---------- Modelo ----------
 class Autoencoder(nn.Module):
-    """
-    A simple autoencoder model with an encoder and decoder.
-    """
-    def __init__(self):
-        super(Autoencoder, self).__init__()
+    def __init__(self, activation=nn.ReLU):
+        super().__init__()
+        act = activation()
         self.encoder = nn.Sequential(
-            nn.Linear(64, 60),
-            nn.ReLU(),
-            nn.Linear(60, 30),
-            nn.ReLU(),
-            nn.Linear(30, 2)  # Bottleneck layer - 2D for visualization
+            nn.Linear(64, 60), act,
+            nn.Linear(60, 30), act,
+            nn.Linear(30, 2)             # gargalo 2D p/ plot
         )
         self.decoder = nn.Sequential(
-            nn.Linear(2, 30),
-            nn.ReLU(),
-            nn.Linear(30, 60),
-            nn.ReLU(),
+            nn.Linear(2, 30), act,
+            nn.Linear(30, 60), act,
             nn.Linear(60, 64)
         )
-
     def forward(self, x):
-        encoded = self.encoder(x)
-        decoded = self.decoder(encoded)
-        return encoded, decoded
+        z = self.encoder(x)
+        xhat = self.decoder(z)
+        return z, xhat
 
+def treinar(model, epochs, lr):
+    opt = optim.Adam(model.parameters(), lr=lr)
+    crit = nn.MSELoss()
+    model.train()
+    for _ in range(epochs):
+        for xb, yb in loader:
+            _, xhat = model(xb)
+            loss = crit(xhat, yb)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+    model.eval()
+    with torch.no_grad():
+        z, _ = model(X_tensor)
+    return z.numpy()
 
-# Initialize model, loss and optimizer
-model = Autoencoder()
-criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+# ---------- Configurações ----------
+# RUIM: ativação Sigmoid (satura), lr alto, poucas épocas
+ae_ruim   = Autoencoder(activation=nn.Sigmoid)
+emb_ruim  = treinar(ae_ruim, epochs=5, lr=5e-2)
 
-# # Training loop
-# num_epochs = 64
-# for epoch in range(num_epochs):
-#     for data, target in dataloader:
-#         # Forward pass
-#         encoded, decoded = model(data)
-#         loss = criterion(decoded, target)
-#
-#         # Backward pass and optimize
-#         optimizer.zero_grad()
-#         loss.backward()
-#         optimizer.step()
-#
-#     if (epoch + 1) % 10 == 0:
-#         print(f'Epoch [{epoch + 1}/{num_epochs}], Loss: {loss.item():.4f}')
-#
-# # Get the 2D encodings for visualization
-# with torch.no_grad():
-#     encoded_imgs, _ = model(X_tensor)
-#     embeddings = encoded_imgs.numpy()
+# MELHOR: ReLU, lr menor, mais épocas
+ae_melhor  = Autoencoder(activation=nn.ReLU)
+emb_melhor = treinar(ae_melhor, epochs=80, lr=1e-3)
 
-# plt.figure(figsize=(10, 8))
-# plt.scatter(embeddings[:, 0], embeddings[:, 1], c=y, cmap='tab10', alpha=0.6)
-# plt.colorbar(label='Digit Class')
-# plt.title('Autoencoder 2D Embedding of MNIST Sample')
-# plt.show()
+# t-SNE direto do espaço original (64D) padronizado
+tsne = TSNE(n_components=2, perplexity=30, learning_rate="auto", init="pca", random_state=0)
+emb_tsne = tsne.fit_transform(X)
 
-# Plot the results
-pca = PCA()
-embeddings = pca.fit_transform(X_scaled)
-# Plot the results
-plt.figure(figsize=(10, 8))
-plt.scatter(embeddings[:, -2], embeddings[:, -1], c=y, cmap='tab10', alpha=0.6)
-plt.colorbar(label='Digit Class')
-plt.title('PCA 2D Embedding of MNIST Sample')
+# ---------- Uma única figura com 3 plots ----------
+fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+cm = "tab10"
+
+axes[0].scatter(emb_ruim[:,0], emb_ruim[:,1], c=y, cmap=cm, s=10, alpha=0.7)
+axes[0].set_title("RUIM (Sigmoid, lr=0.05, 5 épocas)")
+
+axes[1].scatter(emb_melhor[:,0], emb_melhor[:,1], c=y, cmap=cm, s=10, alpha=0.7)
+axes[1].set_title("MELHOR (ReLU, lr=0.001, 80 épocas)")
+
+axes[2].scatter(emb_tsne[:,0], emb_tsne[:,1], c=y, cmap=cm, s=10, alpha=0.7)
+axes[2].set_title("t-SNE (64D → 2D)")
+
+for ax in axes:
+    ax.set_xlabel("Dim 1"); ax.set_ylabel("Dim 2")
+fig.colorbar(plt.cm.ScalarMappable(cmap=cm), ax=axes, ticks=range(len(np.unique(y))), label="Dígito")
+plt.tight_layout()
 plt.show()
-
-# tsne = TSNE()
-# embeddings = tsne.fit_transform(X_scaled)
-# # Plot the results
-# plt.figure(figsize=(10, 8))
-# plt.scatter(embeddings[:, 0], embeddings[:, 1], c=y, cmap='tab10', alpha=0.6)
-# plt.colorbar(label='Digit Class')
-# plt.title('TSNE 2D Embedding of MNIST Sample')
-# plt.show()
